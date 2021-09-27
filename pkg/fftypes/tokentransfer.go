@@ -27,7 +27,7 @@ type TokenTransfer struct {
 	Type           TokenTransferType `json:"type" ffenum:"tokentransfertype"`
 	PoolProtocolID string            `json:"poolProtocolId,omitempty"`
 	TokenIndex     string            `json:"tokenIndex,omitempty"`
-	Author         string            `json:"author,omitempty"`
+	Key            string            `json:"key,omitempty"`
 	From           string            `json:"from,omitempty"`
 	To             string            `json:"to,omitempty"`
 	Amount         int64             `json:"amount,omitempty"`

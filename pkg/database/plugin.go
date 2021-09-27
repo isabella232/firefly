@@ -780,6 +780,7 @@ var TokenAccountQueryFactory = &queryFields{
 var TokenTransferQueryFactory = &queryFields{
 	"poolprotocolid": &StringField{},
 	"tokenindex":     &StringField{},
+	"key":            &StringField{},
 	"from":           &StringField{},
 	"to":             &StringField{},
 	"amount":         &Int64Field{},
