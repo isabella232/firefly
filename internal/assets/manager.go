@@ -42,7 +42,7 @@ type Manager interface {
 	GetTokenTransfers(ctx context.Context, ns, typeName, poolName string, filter database.AndFilter) ([]*fftypes.TokenTransfer, *database.FilterResult, error)
 	MintTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransfer, waitConfirm bool) (*fftypes.TokenTransfer, error)
 	BurnTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransfer, waitConfirm bool) (*fftypes.TokenTransfer, error)
-	TransferTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransfer, waitConfirm bool) (*fftypes.TokenTransfer, error)
+	TransferTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransferInput, waitConfirm bool) (*fftypes.TokenTransfer, error)
 
 	// Bound token callbacks
 	TokenPoolCreated(tk tokens.Plugin, tokenType fftypes.TokenType, tx *fftypes.UUID, protocolID, signingIdentity, protocolTxID string, additionalInfo fftypes.JSONObject) error
@@ -276,7 +276,7 @@ func (am *assetManager) BurnTokens(ctx context.Context, ns, typeName, poolName s
 	return am.transferTokensWithID(ctx, fftypes.NewUUID(), ns, typeName, poolName, transfer, waitConfirm)
 }
 
-func (am *assetManager) TransferTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransfer, waitConfirm bool) (*fftypes.TokenTransfer, error) {
+func (am *assetManager) TransferTokens(ctx context.Context, ns, typeName, poolName string, transfer *fftypes.TokenTransferInput, waitConfirm bool) (*fftypes.TokenTransfer, error) {
 	transfer.Type = fftypes.TokenTransferTypeTransfer
 	if transfer.Key == "" {
 		org, err := am.identity.GetLocalOrganization(ctx)
@@ -294,7 +294,16 @@ func (am *assetManager) TransferTokens(ctx context.Context, ns, typeName, poolNa
 	if transfer.From == transfer.To {
 		return nil, i18n.NewError(ctx, i18n.MsgCannotTransferToSelf)
 	}
-	return am.transferTokensWithID(ctx, fftypes.NewUUID(), ns, typeName, poolName, transfer, waitConfirm)
+
+	if transfer.Message != nil {
+		msg, err := am.broadcast.BroadcastMessage(ctx, ns, transfer.Message, waitConfirm)
+		if err != nil {
+			return nil, err
+		}
+		transfer.MessageHash = msg.Hash
+	}
+
+	return am.transferTokensWithID(ctx, fftypes.NewUUID(), ns, typeName, poolName, &transfer.TokenTransfer, waitConfirm)
 }
 
 func (am *assetManager) transferTokensWithID(ctx context.Context, id *fftypes.UUID, ns, typeName, poolName string, transfer *fftypes.TokenTransfer, waitConfirm bool) (*fftypes.TokenTransfer, error) {

@@ -499,10 +499,12 @@ func TestTransferTokensSuccess(t *testing.T) {
 	am, cancel := newTestAssets(t)
 	defer cancel()
 
-	transfer := &fftypes.TokenTransfer{
-		From:   "A",
-		To:     "B",
-		Amount: 5,
+	transfer := &fftypes.TokenTransferInput{
+		TokenTransfer: fftypes.TokenTransfer{
+			From:   "A",
+			To:     "B",
+			Amount: 5,
+		},
 	}
 
 	mdi := am.database.(*databasemocks.Plugin)
@@ -510,7 +512,7 @@ func TestTransferTokensSuccess(t *testing.T) {
 	mim := am.identity.(*identitymanagermocks.Manager)
 	mim.On("GetLocalOrganization", context.Background()).Return(&fftypes.Organization{Identity: "0x12345"}, nil)
 	mdi.On("GetTokenPool", context.Background(), "ns1", "pool1").Return(&fftypes.TokenPool{}, nil)
-	mti.On("TransferTokens", context.Background(), mock.Anything, transfer).Return(nil)
+	mti.On("TransferTokens", context.Background(), mock.Anything, &transfer.TokenTransfer).Return(nil)
 	mdi.On("UpsertOperation", mock.Anything, mock.Anything, false).Return(nil)
 
 	_, err := am.TransferTokens(context.Background(), "ns1", "magic-tokens", "pool1", transfer, false)
@@ -525,8 +527,10 @@ func TestTransferTokensNoFromOrTo(t *testing.T) {
 	am, cancel := newTestAssets(t)
 	defer cancel()
 
-	transfer := &fftypes.TokenTransfer{
-		Amount: 5,
+	transfer := &fftypes.TokenTransferInput{
+		TokenTransfer: fftypes.TokenTransfer{
+			Amount: 5,
+		},
 	}
 
 	mim := am.identity.(*identitymanagermocks.Manager)

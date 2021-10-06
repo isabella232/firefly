@@ -88,6 +88,7 @@ type transferTokens struct {
 	Amount     int64  `json:"amount"`
 	RequestID  string `json:"requestId,omitempty"`
 	TrackingID string `json:"trackingId"`
+	Data       string `json:"data,omitempty"`
 }
 
 func (h *FFTokens) Name() string {
@@ -348,6 +349,7 @@ func (h *FFTokens) TransferTokens(ctx context.Context, operationID *fftypes.UUID
 			Amount:     transfer.Amount,
 			RequestID:  operationID.String(),
 			TrackingID: transfer.LocalID.String(),
+			Data:       transfer.MessageHash.String(),
 		}).
 		Post("/api/v1/transfer")
 	if err != nil || !res.IsSuccess() {

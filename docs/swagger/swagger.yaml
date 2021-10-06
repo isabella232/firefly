@@ -4751,6 +4751,7 @@ paths:
                   type: string
                 key:
                   type: string
+                messageHash: {}
                 tokenIndex:
                   type: string
               type: object
@@ -4769,6 +4770,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
@@ -4795,6 +4797,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
@@ -4855,6 +4858,7 @@ paths:
                   type: integer
                 key:
                   type: string
+                messageHash: {}
                 to:
                   type: string
               type: object
@@ -4873,6 +4877,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
@@ -4899,6 +4904,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
@@ -5077,20 +5083,7 @@ paths:
       requestBody:
         content:
           application/json:
-            schema:
-              properties:
-                amount:
-                  format: int64
-                  type: integer
-                from:
-                  type: string
-                key:
-                  type: string
-                to:
-                  type: string
-                tokenIndex:
-                  type: string
-              type: object
+            schema: {}
       responses:
         "200":
           content:
@@ -5106,6 +5099,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
@@ -5132,6 +5126,7 @@ paths:
                   key:
                     type: string
                   localId: {}
+                  messageHash: {}
                   poolProtocolId:
                     type: string
                   protocolId:
