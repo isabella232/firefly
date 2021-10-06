@@ -10,6 +10,7 @@ CREATE TABLE tokentransfer (
   to_key           VARCHAR(1024)   NULL,
   amount           BIGINT          NOT NULL,
   protocol_id      VARCHAR(1024)   NOT NULL,
+  message_hash     CHAR(64)        NOT NULL,
   created          BIGINT          NOT NULL
 );
 

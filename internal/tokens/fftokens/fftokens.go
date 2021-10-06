@@ -211,13 +211,21 @@ func (h *FFTokens) handleTokenTransfer(ctx context.Context, t fftypes.TokenTrans
 	}
 
 	// We want to process all transfers, even those not initiated by FireFly.
-	// The trackingID is an optional argument from the connector, so it's important not to
-	// fail if it's missing or malformed.
+	// The following are optional arguments from the connector, so it's important not to
+	// fail if they're missing or malformed.
 	trackingID := data.GetString("trackingId")
 	localID, err := fftypes.ParseUUID(ctx, trackingID)
 	if err != nil {
 		log.L(ctx).Infof("%s event contains invalid ID - continuing anyway (%s): %+v", eventName, err, data)
 		localID = fftypes.NewUUID()
+	}
+	transferData := data.GetString("data")
+	var messageHash fftypes.Bytes32
+	if transferData != "" {
+		err = messageHash.UnmarshalText([]byte(transferData))
+		if err != nil {
+			log.L(ctx).Errorf("%s event contains invalid message hash - continuing anyway (%s): %+v", eventName, err, data)
+		}
 	}
 
 	transfer := &fftypes.TokenTransfer{
@@ -229,6 +237,7 @@ func (h *FFTokens) handleTokenTransfer(ctx context.Context, t fftypes.TokenTrans
 		To:             toAddress,
 		Amount:         valueInt,
 		ProtocolID:     txHash,
+		MessageHash:    &messageHash,
 	}
 
 	// If there's an error dispatching the event, we must return the error and shutdown
