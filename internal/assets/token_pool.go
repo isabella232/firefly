@@ -90,7 +90,11 @@ func (am *assetManager) createTokenPoolInternal(ctx context.Context, pool *fftyp
 		return nil, err
 	}
 
-	return pool, am.operations.StartOperation(ctx, op)
+	po, err := plugin.CreateTokenPool(ctx, op.ID, pool)
+	if err != nil {
+		return nil, err
+	}
+	return pool, am.operations.RunOperation(ctx, po)
 }
 
 func (am *assetManager) ActivateTokenPool(ctx context.Context, pool *fftypes.TokenPool, blockchainInfo fftypes.JSONObject) error {
@@ -109,7 +113,11 @@ func (am *assetManager) ActivateTokenPool(ctx context.Context, pool *fftypes.Tok
 		return err
 	}
 
-	return am.operations.StartOperation(ctx, op)
+	po, err := plugin.ActivateTokenPool(ctx, op.ID, pool, blockchainInfo)
+	if err != nil {
+		return err
+	}
+	return am.operations.RunOperation(ctx, po)
 }
 
 func (am *assetManager) GetTokenPools(ctx context.Context, ns string, filter database.AndFilter) ([]*fftypes.TokenPool, *database.FilterResult, error) {

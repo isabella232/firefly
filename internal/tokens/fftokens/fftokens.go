@@ -19,6 +19,7 @@ package fftokens
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/hyperledger/firefly/internal/config"
@@ -370,21 +371,49 @@ func (ft *FFTokens) eventLoop() {
 	}
 }
 
-func (ft *FFTokens) CreateTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool) (complete bool, err error) {
+func (ft *FFTokens) runHTTPOperation(ctx context.Context, op *fftypes.PreparedOperation) (*resty.Response, error) {
+	if op.Type != fftypes.PreparedOpTypeHTTP {
+		return nil, fmt.Errorf("unsupported operation type: %s", op.Type)
+	}
+	return ft.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(op.Input.String()).
+		Execute(op.SubType, op.Target)
+}
+
+func (ft *FFTokens) CreateTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool) (*fftypes.PreparedOperation, error) {
 	data, _ := json.Marshal(tokenData{
 		TX: pool.TX.ID,
 	})
-	res, err := ft.client.R().SetContext(ctx).
-		SetBody(&createPool{
-			Type:      pool.Type,
-			RequestID: opID.String(),
-			Operator:  pool.Key,
-			Data:      string(data),
-			Config:    pool.Config,
-			Name:      pool.Name,
-			Symbol:    pool.Symbol,
-		}).
-		Post("/api/v1/createpool")
+	body := &createPool{
+		Type:      pool.Type,
+		RequestID: opID.String(),
+		Operator:  pool.Key,
+		Data:      string(data),
+		Config:    pool.Config,
+		Name:      pool.Name,
+		Symbol:    pool.Symbol,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	op := &fftypes.PreparedOperation{
+		ID:      opID,
+		Type:    fftypes.PreparedOpTypeHTTP,
+		SubType: "POST",
+		Target:  ft.client.BaseURL + "/api/v1/createpool",
+		Input:   fftypes.JSONAnyPtrBytes(bodyJSON),
+	}
+	op.Run = func(ctx context.Context) (complete bool, err error) {
+		return ft.runCreate(ctx, op)
+	}
+	return op, nil
+}
+
+func (ft *FFTokens) runCreate(ctx context.Context, op *fftypes.PreparedOperation) (complete bool, err error) {
+	res, err := ft.runHTTPOperation(ctx, op)
 	if err != nil || !res.IsSuccess() {
 		return false, restclient.WrapRestErr(ctx, res, err, i18n.MsgTokensRESTErr)
 	}
@@ -399,14 +428,31 @@ func (ft *FFTokens) CreateTokenPool(ctx context.Context, opID *fftypes.UUID, poo
 	return false, nil
 }
 
-func (ft *FFTokens) ActivateTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool, blockchainInfo fftypes.JSONObject) (complete bool, err error) {
-	res, err := ft.client.R().SetContext(ctx).
-		SetBody(&activatePool{
-			RequestID:   opID.String(),
-			PoolID:      pool.ProtocolID,
-			Transaction: blockchainInfo,
-		}).
-		Post("/api/v1/activatepool")
+func (ft *FFTokens) ActivateTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool, blockchainInfo fftypes.JSONObject) (*fftypes.PreparedOperation, error) {
+	body := &activatePool{
+		RequestID:   opID.String(),
+		PoolID:      pool.ProtocolID,
+		Transaction: blockchainInfo,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	op := &fftypes.PreparedOperation{
+		ID:      opID,
+		Type:    fftypes.PreparedOpTypeHTTP,
+		SubType: "POST",
+		Target:  ft.client.BaseURL + "/api/v1/activatepool",
+		Input:   fftypes.JSONAnyPtrBytes(bodyJSON),
+	}
+	op.Run = func(ctx context.Context) (complete bool, err error) {
+		return ft.runActivate(ctx, op)
+	}
+	return op, nil
+}
+
+func (ft *FFTokens) runActivate(ctx context.Context, op *fftypes.PreparedOperation) (complete bool, err error) {
+	res, err := ft.runHTTPOperation(ctx, op)
 	if err != nil || !res.IsSuccess() {
 		return false, restclient.WrapRestErr(ctx, res, err, i18n.MsgTokensRESTErr)
 	}
@@ -421,70 +467,105 @@ func (ft *FFTokens) ActivateTokenPool(ctx context.Context, opID *fftypes.UUID, p
 	return false, nil
 }
 
-func (ft *FFTokens) MintTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, mint *fftypes.TokenTransfer) error {
+func (ft *FFTokens) MintTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, mint *fftypes.TokenTransfer) (*fftypes.PreparedOperation, error) {
 	data, _ := json.Marshal(tokenData{
 		TX:          mint.TX.ID,
 		Message:     mint.Message,
 		MessageHash: mint.MessageHash,
 	})
-	res, err := ft.client.R().SetContext(ctx).
-		SetBody(&mintTokens{
-			PoolID:     poolProtocolID,
-			TokenIndex: mint.TokenIndex,
-			To:         mint.To,
-			Amount:     mint.Amount.Int().String(),
-			RequestID:  opID.String(),
-			Operator:   mint.Key,
-			Data:       string(data),
-		}).
-		Post("/api/v1/mint")
-	if err != nil || !res.IsSuccess() {
-		return restclient.WrapRestErr(ctx, res, err, i18n.MsgTokensRESTErr)
+	body := &mintTokens{
+		PoolID:     poolProtocolID,
+		TokenIndex: mint.TokenIndex,
+		To:         mint.To,
+		Amount:     mint.Amount.Int().String(),
+		RequestID:  opID.String(),
+		Operator:   mint.Key,
+		Data:       string(data),
 	}
-	return nil
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	op := &fftypes.PreparedOperation{
+		ID:      opID,
+		Type:    fftypes.PreparedOpTypeHTTP,
+		SubType: "POST",
+		Target:  ft.client.BaseURL + "/api/v1/mint",
+		Input:   fftypes.JSONAnyPtrBytes(bodyJSON),
+	}
+	op.Run = func(ctx context.Context) (complete bool, err error) {
+		return false, ft.runTransfer(ctx, op)
+	}
+	return op, nil
 }
 
-func (ft *FFTokens) BurnTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, burn *fftypes.TokenTransfer) error {
+func (ft *FFTokens) BurnTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, burn *fftypes.TokenTransfer) (*fftypes.PreparedOperation, error) {
 	data, _ := json.Marshal(tokenData{
 		TX:          burn.TX.ID,
 		Message:     burn.Message,
 		MessageHash: burn.MessageHash,
 	})
-	res, err := ft.client.R().SetContext(ctx).
-		SetBody(&burnTokens{
-			PoolID:     poolProtocolID,
-			TokenIndex: burn.TokenIndex,
-			From:       burn.From,
-			Amount:     burn.Amount.Int().String(),
-			RequestID:  opID.String(),
-			Operator:   burn.Key,
-			Data:       string(data),
-		}).
-		Post("/api/v1/burn")
-	if err != nil || !res.IsSuccess() {
-		return restclient.WrapRestErr(ctx, res, err, i18n.MsgTokensRESTErr)
+	body := &burnTokens{
+		PoolID:     poolProtocolID,
+		TokenIndex: burn.TokenIndex,
+		From:       burn.From,
+		Amount:     burn.Amount.Int().String(),
+		RequestID:  opID.String(),
+		Operator:   burn.Key,
+		Data:       string(data),
 	}
-	return nil
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	op := &fftypes.PreparedOperation{
+		ID:      opID,
+		Type:    fftypes.PreparedOpTypeHTTP,
+		SubType: "POST",
+		Target:  ft.client.BaseURL + "/api/v1/burn",
+		Input:   fftypes.JSONAnyPtrBytes(bodyJSON),
+	}
+	op.Run = func(ctx context.Context) (complete bool, err error) {
+		return false, ft.runTransfer(ctx, op)
+	}
+	return op, nil
 }
 
-func (ft *FFTokens) TransferTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, transfer *fftypes.TokenTransfer) error {
+func (ft *FFTokens) TransferTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, transfer *fftypes.TokenTransfer) (*fftypes.PreparedOperation, error) {
 	data, _ := json.Marshal(tokenData{
 		TX:          transfer.TX.ID,
 		Message:     transfer.Message,
 		MessageHash: transfer.MessageHash,
 	})
-	res, err := ft.client.R().SetContext(ctx).
-		SetBody(&transferTokens{
-			PoolID:     poolProtocolID,
-			TokenIndex: transfer.TokenIndex,
-			From:       transfer.From,
-			To:         transfer.To,
-			Amount:     transfer.Amount.Int().String(),
-			RequestID:  opID.String(),
-			Operator:   transfer.Key,
-			Data:       string(data),
-		}).
-		Post("/api/v1/transfer")
+	body := &transferTokens{
+		PoolID:     poolProtocolID,
+		TokenIndex: transfer.TokenIndex,
+		From:       transfer.From,
+		To:         transfer.To,
+		Amount:     transfer.Amount.Int().String(),
+		RequestID:  opID.String(),
+		Operator:   transfer.Key,
+		Data:       string(data),
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	op := &fftypes.PreparedOperation{
+		ID:      opID,
+		Type:    fftypes.PreparedOpTypeHTTP,
+		SubType: "POST",
+		Target:  ft.client.BaseURL + "/api/v1/transfer",
+		Input:   fftypes.JSONAnyPtrBytes(bodyJSON),
+	}
+	op.Run = func(ctx context.Context) (complete bool, err error) {
+		return false, ft.runTransfer(ctx, op)
+	}
+	return op, nil
+}
+
+func (ft *FFTokens) runTransfer(ctx context.Context, op *fftypes.PreparedOperation) error {
+	res, err := ft.runHTTPOperation(ctx, op)
 	if err != nil || !res.IsSuccess() {
 		return restclient.WrapRestErr(ctx, res, err, i18n.MsgTokensRESTErr)
 	}

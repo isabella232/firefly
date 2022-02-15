@@ -16,6 +16,8 @@
 
 package fftypes
 
+import "context"
+
 // OpType describes mechanical steps in the process that have to be performed,
 // might be asynchronous, and have results in the back-end systems that might need
 // to be correlated with messages by operators.
@@ -84,4 +86,24 @@ type Operation struct {
 	Output      JSONObject `json:"output,omitempty"`
 	Created     *FFTime    `json:"created,omitempty"`
 	Updated     *FFTime    `json:"updated,omitempty"`
+}
+
+type PreparedOpType = FFEnum
+
+var (
+	// PreparedOpTypeHTTP is an HTTP request
+	PreparedOpTypeHTTP OpType = ffEnum("preparedoptype", "http")
+)
+
+type OperationRunner func(ctx context.Context) (complete bool, err error)
+
+// PreparedOperation is a description of a raw action ready to be performed by a plugin
+// It is never stored in the database in this form - only built on demand from an Operation and related objects
+type PreparedOperation struct {
+	ID      *UUID           `json:"id"` // matches an Operation ID
+	Type    PreparedOpType  `json:"type"`
+	SubType string          `json:"subtype,omitempty"`
+	Target  string          `json:"target,omitempty"`
+	Input   *JSONAny        `json:"input,omitempty"`
+	Run     OperationRunner `json:"-"`
 }

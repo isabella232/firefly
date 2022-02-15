@@ -28,7 +28,8 @@ import (
 )
 
 type Manager interface {
-	StartOperation(ctx context.Context, op *fftypes.Operation) error
+	PrepareOperation(ctx context.Context, op *fftypes.Operation) (*fftypes.PreparedOperation, error)
+	RunOperation(ctx context.Context, op *fftypes.PreparedOperation) error
 }
 
 type operationsManager struct {
@@ -51,44 +52,75 @@ func NewOperationsManager(ctx context.Context, di database.Plugin, ti map[string
 	return om, nil
 }
 
-func (om *operationsManager) StartOperation(ctx context.Context, op *fftypes.Operation) error {
+func (om *operationsManager) PrepareOperation(ctx context.Context, op *fftypes.Operation) (*fftypes.PreparedOperation, error) {
 	switch op.Type {
 	case fftypes.OpTypeTokenCreatePool:
 		pool, err := txcommon.RetrieveTokenPoolCreateInputs(ctx, op)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return om.createTokenPool(ctx, op.ID, pool)
+		plugin, err := om.selectTokenPlugin(ctx, pool.Connector)
+		if err != nil {
+			return nil, err
+		}
+		return plugin.CreateTokenPool(ctx, op.ID, pool)
 
 	case fftypes.OpTypeTokenActivatePool:
 		poolID, blockchainInfo, err := txcommon.RetrieveTokenPoolActivateInputs(ctx, op)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pool, err := om.database.GetTokenPoolByID(ctx, poolID)
 		if err != nil {
-			return err
+			return nil, err
 		} else if pool == nil {
-			return i18n.NewError(ctx, i18n.Msg404NotFound)
+			return nil, i18n.NewError(ctx, i18n.Msg404NotFound)
 		}
-		return om.activateTokenPool(ctx, op.ID, pool, blockchainInfo)
+		plugin, err := om.selectTokenPlugin(ctx, pool.Connector)
+		if err != nil {
+			return nil, err
+		}
+		return plugin.ActivateTokenPool(ctx, op.ID, pool, blockchainInfo)
 
 	case fftypes.OpTypeTokenTransfer:
 		transfer, err := txcommon.RetrieveTokenTransferInputs(ctx, op)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pool, err := om.database.GetTokenPoolByID(ctx, transfer.Pool)
 		if err != nil {
-			return err
+			return nil, err
 		} else if pool == nil {
-			return i18n.NewError(ctx, i18n.Msg404NotFound)
+			return nil, i18n.NewError(ctx, i18n.Msg404NotFound)
 		}
-		return om.transferTokens(ctx, op.ID, pool.ProtocolID, transfer)
+		plugin, err := om.selectTokenPlugin(ctx, transfer.Connector)
+		if err != nil {
+			return nil, err
+		}
+		switch transfer.Type {
+		case fftypes.TokenTransferTypeMint:
+			return plugin.MintTokens(ctx, op.ID, pool.ProtocolID, transfer)
+		case fftypes.TokenTransferTypeTransfer:
+			return plugin.TransferTokens(ctx, op.ID, pool.ProtocolID, transfer)
+		case fftypes.TokenTransferTypeBurn:
+			return plugin.BurnTokens(ctx, op.ID, pool.ProtocolID, transfer)
+		default:
+			panic(fmt.Sprintf("unknown transfer type: %v", transfer.Type))
+		}
 
 	default:
-		return i18n.NewError(ctx, i18n.MsgOperationNotSupported)
+		return nil, i18n.NewError(ctx, i18n.MsgOperationNotSupported)
 	}
+}
+
+func (om *operationsManager) RunOperation(ctx context.Context, op *fftypes.PreparedOperation) error {
+	if complete, err := op.Run(ctx); err != nil {
+		om.txHelper.WriteOperationFailure(ctx, op.ID, err)
+		return err
+	} else if complete {
+		om.txHelper.WriteOperationSuccess(ctx, op.ID, nil)
+	}
+	return nil
 }
 
 func (om *operationsManager) selectTokenPlugin(ctx context.Context, name string) (tokens.Plugin, error) {
@@ -98,54 +130,4 @@ func (om *operationsManager) selectTokenPlugin(ctx context.Context, name string)
 		}
 	}
 	return nil, i18n.NewError(ctx, i18n.MsgUnknownTokensPlugin, name)
-}
-
-func (om *operationsManager) createTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool) error {
-	plugin, err := om.selectTokenPlugin(ctx, pool.Connector)
-	if err != nil {
-		return err
-	}
-	if complete, err := plugin.CreateTokenPool(ctx, opID, pool); err != nil {
-		om.txHelper.WriteOperationFailure(ctx, opID, err)
-		return err
-	} else if complete {
-		om.txHelper.WriteOperationSuccess(ctx, opID, nil)
-	}
-	return nil
-}
-
-func (om *operationsManager) activateTokenPool(ctx context.Context, opID *fftypes.UUID, pool *fftypes.TokenPool, blockchainInfo fftypes.JSONObject) error {
-	plugin, err := om.selectTokenPlugin(ctx, pool.Connector)
-	if err != nil {
-		return err
-	}
-	if complete, err := plugin.ActivateTokenPool(ctx, opID, pool, blockchainInfo); err != nil {
-		om.txHelper.WriteOperationFailure(ctx, opID, err)
-		return err
-	} else if complete {
-		om.txHelper.WriteOperationSuccess(ctx, opID, nil)
-	}
-	return nil
-}
-
-func (om *operationsManager) transferTokens(ctx context.Context, opID *fftypes.UUID, poolProtocolID string, transfer *fftypes.TokenTransfer) error {
-	plugin, err := om.selectTokenPlugin(ctx, transfer.Connector)
-	if err != nil {
-		return err
-	}
-	switch transfer.Type {
-	case fftypes.TokenTransferTypeMint:
-		err = plugin.MintTokens(ctx, opID, poolProtocolID, transfer)
-	case fftypes.TokenTransferTypeTransfer:
-		err = plugin.TransferTokens(ctx, opID, poolProtocolID, transfer)
-	case fftypes.TokenTransferTypeBurn:
-		err = plugin.BurnTokens(ctx, opID, poolProtocolID, transfer)
-	default:
-		panic(fmt.Sprintf("unknown transfer type: %v", transfer.Type))
-	}
-	if err != nil {
-		om.txHelper.WriteOperationFailure(ctx, opID, err)
-		return err
-	}
-	return nil
 }
