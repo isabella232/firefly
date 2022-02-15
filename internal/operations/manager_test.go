@@ -19,11 +19,13 @@ import (
 	"testing"
 
 	"github.com/hyperledger/firefly/internal/config"
+	"github.com/hyperledger/firefly/internal/txcommon"
 	"github.com/hyperledger/firefly/mocks/databasemocks"
 	"github.com/hyperledger/firefly/mocks/tokenmocks"
 	"github.com/hyperledger/firefly/pkg/fftypes"
 	"github.com/hyperledger/firefly/pkg/tokens"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func newTestOperations(t *testing.T) (*operationsManager, func()) {
@@ -37,6 +39,11 @@ func newTestOperations(t *testing.T) (*operationsManager, func()) {
 	return om.(*operationsManager), cancel
 }
 
+func TestInitFail(t *testing.T) {
+	_, err := NewOperationsManager(context.Background(), nil, nil)
+	assert.Regexp(t, "FF10128", err)
+}
+
 func TestStartOperationNotSupported(t *testing.T) {
 	om, cancel := newTestOperations(t)
 	defer cancel()
@@ -45,4 +52,136 @@ func TestStartOperationNotSupported(t *testing.T) {
 
 	err := om.StartOperation(context.Background(), op)
 	assert.Regexp(t, "FF10346", err)
+}
+
+func TestStartOperationCreatePool(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenCreatePool,
+	}
+	pool := &fftypes.TokenPool{
+		Connector: "magic-tokens",
+	}
+	err := txcommon.AddTokenPoolCreateInputs(op, pool)
+	assert.NoError(t, err)
+
+	mti := om.tokens["magic-tokens"].(*tokenmocks.Plugin)
+	mti.On("CreateTokenPool", context.Background(), op.ID, mock.AnythingOfType("*fftypes.TokenPool")).Return(false, nil)
+
+	err = om.StartOperation(context.Background(), op)
+	assert.NoError(t, err)
+
+	mti.AssertExpectations(t)
+}
+
+func TestStartOperationCreatePoolBadInput(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenCreatePool,
+		Input: fftypes.JSONObject{
+			"test": map[bool]bool{true: false},
+		},
+	}
+
+	err := om.StartOperation(context.Background(), op)
+	assert.Regexp(t, "FF10151", err)
+}
+
+func TestStartOperationActivatePool(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenActivatePool,
+	}
+	info := fftypes.JSONObject{
+		"some": "info",
+	}
+	pool := &fftypes.TokenPool{
+		ID:        fftypes.NewUUID(),
+		Connector: "magic-tokens",
+	}
+	txcommon.AddTokenPoolActivateInputs(op, pool.ID, info)
+
+	mdi := om.database.(*databasemocks.Plugin)
+	mti := om.tokens["magic-tokens"].(*tokenmocks.Plugin)
+	mdi.On("GetTokenPoolByID", context.Background(), pool.ID).Return(pool, nil)
+	mti.On("ActivateTokenPool", context.Background(), op.ID, mock.AnythingOfType("*fftypes.TokenPool"), info).Return(false, nil)
+
+	err := om.StartOperation(context.Background(), op)
+	assert.NoError(t, err)
+
+	mdi.AssertExpectations(t)
+	mti.AssertExpectations(t)
+}
+
+func TestStartOperationActivatePoolBadInput(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenActivatePool,
+		Input: fftypes.JSONObject{
+			"id": "bad",
+		},
+	}
+
+	err := om.StartOperation(context.Background(), op)
+	assert.Regexp(t, "FF10142", err)
+}
+
+func TestStartOperationTokenTransfer(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenTransfer,
+	}
+	pool := &fftypes.TokenPool{
+		ID:         fftypes.NewUUID(),
+		Connector:  "magic-tokens",
+		ProtocolID: "F1",
+	}
+	transfer := &fftypes.TokenTransfer{
+		Pool:      pool.ID,
+		Connector: "magic-tokens",
+		Type:      fftypes.TokenTransferTypeTransfer,
+	}
+	txcommon.AddTokenTransferInputs(op, transfer)
+
+	mdi := om.database.(*databasemocks.Plugin)
+	mti := om.tokens["magic-tokens"].(*tokenmocks.Plugin)
+	mdi.On("GetTokenPoolByID", context.Background(), pool.ID).Return(pool, nil)
+	mti.On("TransferTokens", context.Background(), op.ID, "F1", mock.AnythingOfType("*fftypes.TokenTransfer")).Return(nil)
+
+	err := om.StartOperation(context.Background(), op)
+	assert.NoError(t, err)
+
+	mdi.AssertExpectations(t)
+	mti.AssertExpectations(t)
+}
+
+func TestStartOperationTokenTransferBadInput(t *testing.T) {
+	om, cancel := newTestOperations(t)
+	defer cancel()
+
+	op := &fftypes.Operation{
+		ID:   fftypes.NewUUID(),
+		Type: fftypes.OpTypeTokenTransfer,
+		Input: fftypes.JSONObject{
+			"test": map[bool]bool{true: false},
+		},
+	}
+
+	err := om.StartOperation(context.Background(), op)
+	assert.Regexp(t, "FF10151", err)
 }
