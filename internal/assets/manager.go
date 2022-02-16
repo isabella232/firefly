@@ -87,6 +87,11 @@ func NewAssetManager(ctx context.Context, di database.Plugin, im identity.Manage
 		metrics:    mm,
 		operations: ops,
 	}
+	ops.RegisterHandler(am, []fftypes.OpType{
+		fftypes.OpTypeTokenCreatePool,
+		fftypes.OpTypeTokenActivatePool,
+		fftypes.OpTypeTokenTransfer,
+	})
 	return am, nil
 }
 
